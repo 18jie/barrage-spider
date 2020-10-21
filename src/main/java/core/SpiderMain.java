@@ -39,7 +39,7 @@ public class SpiderMain {
         // 1. 获取小说列表
         List<String> bookList = new ArrayList<String>();
         for (String bookUrl : bookUrls) {
-            HttpGet httpGet = buildGetRequest(bookUrl, false);
+            HttpGet httpGet = buildGetRequest(bookUrl, false, null);
             HttpResponse response = httpClient.execute(httpGet);
             String content = EntityUtils.toString(response.getEntity());
             Document document = Jsoup.parse(content);
@@ -66,8 +66,12 @@ public class SpiderMain {
         String barragePre = "https://read.qidian.com/ajax/chapterReview/reviewList?_csrfToken=bvqjtrVIgbty9C1J8dnTwsSN5CmQnyzvi5LjRDL0&bookId=";
         List<Map<String, ArrayList<String>>> bookCategoryMapList = new ArrayList<Map<String, ArrayList<String>>>();
         for (String bookId : bookList) {
-            String url = categoryUrl + bookId;
-            HttpGet httpGet = buildGetRequest(url, true);
+            String bookId1 = "1016660823";
+            String url = categoryUrl + bookId1;
+            String referer = "https://book.qidian.com/info/" + bookId;
+            System.out.println(referer);
+            //这里是一个特定的请求头，不要在动
+            HttpGet httpGet = buildGetRequest(url, true, referer);
             HttpResponse response = httpClient.execute(httpGet);
             String content = EntityUtils.toString(response.getEntity());
 
@@ -78,19 +82,27 @@ public class SpiderMain {
             }
             JSONObject data = jsonObject.getJSONObject("data");
             JSONArray vs = data.getJSONArray("vs");
+            // TODO 在请求弹幕内容时，需要获取referer信息，该信息需要在页面上获取
             for (int i = 0; i < vs.size(); i++) {
-                JSONArray jsonArray = vs.getJSONArray(i);
+                JSONArray jsonArray = vs.getJSONObject(i).getJSONArray("cs");
                 for (int i1 = 0; i1 < jsonArray.size(); i1++) {
                     JSONObject jsonObject1 = jsonArray.getJSONObject(i1);
+                    System.out.println(jsonObject1);
                     int chapterId = jsonObject1.getIntValue("id");
+                    String chapterCode = jsonObject1.getString("cU");
                     //有了书籍id和章节id，轮询弹幕，并获取
                     //https://read.qidian.com/ajax/chapterReview/reviewList?_csrfToken=ZYhxGTzQqDYJ6eSWUxFiztIKOOkJOlR81HuJlQki&bookId=3144877&chapterId=486663811&segmentId=5&type=2&page=1&pageSize=20
                     StringBuilder builder = new StringBuilder(barragePre).append(bookId);
                     builder.append("&chapterId=").append(chapterId).append("&segmentId=");
                     //每章获取100条
-                    for (int j = 0; j < 100; j++) {
-                        builder.append(j).append("type=2&page=1&pageSize=100");
-                        HttpGet barrageUrl = buildGetRequest(builder.toString(), true);
+                    for (int j = -1; j < 100; j++) {
+                        builder.append(j).append("&type=2&page=1&pageSize=20");
+//                        String tempUrl = "https://read.qidian.com/ajax/chapterReview/reviewList?_csrfToken=bvqjtrVIgbty9C1J8dnTwsSN5CmQnyzvi5LjRDL0&bookId=1016660823&chapterId=504263025&segmentId=-1&type=2&page=1&pageSize=20";
+                        // https://read.qidian.com/ajax/chapterReview/reviewList?_csrfToken=bvqjtrVIgbty9C1J8dnTwsSN5CmQnyzvi5LjRDL0&bookId=1016660823&chapterId=512949930&segmentId=1type=2&page=1&pageSize=20
+                        String barrageUrl1 = builder.toString();
+                        HttpGet barrageUrl = buildGetRequest1(barrageUrl1, chapterCode);
+//                        HttpGet barrageUrl = buildGetRequest1(tempUrl);
+
                         HttpResponse response1 = httpClient.execute(barrageUrl);
                         String content1 = EntityUtils.toString(response1.getEntity());
 
@@ -114,20 +126,63 @@ public class SpiderMain {
         }
     }
 
-    private static HttpGet buildGetRequest(String url, boolean cookie) {
+    // 这个头给第一个url使用，获取章节id
+    private static HttpGet buildGetRequest(String url, boolean cookie, String refer) {
         Random random = new Random();
         HttpGet httpGet = new HttpGet(url);
-        httpGet.setHeader("User-Agent", userAgents[random.nextInt(5)]);
-        httpGet.setHeader("Accept", "application/json, text/javascript, */*; q=0.01");
-        httpGet.setHeader("Accept-Encoding", "gzip, deflate");
-        httpGet.setHeader("Connection", "keep-alive");
-        httpGet.setHeader("accept","text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
+        httpGet.setHeader("user-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36");
+        httpGet.setHeader("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
+        httpGet.setHeader("accept-Encoding", "gzip, deflate");
+        httpGet.setHeader("connection", "keep-alive");
+        httpGet.setHeader(":authority", "book.qidian.com");
+        httpGet.setHeader("cache-control", "max-age=0");
+        httpGet.setHeader("upgrade-insecure-requests", "1");
+        httpGet.setHeader("accept-language", "zh-CN,zh;q=0.9,en;q=0.8");
+        httpGet.setHeader("cookie", "_csrfToken=bvqjtrVIgbty9C1J8dnTwsSN5CmQnyzvi5LjRDL0; qdrs=0%7C3%7C0%7C0%7C1; qdgd=1; showSectionCommentGuide=1; e1=%7B%22pid%22%3A%22qd_P_rank_01%22%2C%22eid%22%3A%22qd_C40%22%2C%22l1%22%3A5%7D; e2=%7B%22pid%22%3A%22qd_p_qidian%22%2C%22eid%22%3A%22qd_A53%22%2C%22l1%22%3A40%7D; lrbc=3144877%7C486663811%7C0%2C1016572786%7C498215647%7C0%2C1023613096%7C571280490%7C0; rcr=3144877%2C1016572786%2C1015792398%2C1017125042%2C1023525533%2C1023303665%2C1023357920%2C1023578176%2C1023613096; bc=3144877; newstatisticUUID=1603118008_1059896075");
+//        httpGet.setHeader("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
         if (cookie) {
-            httpGet.setHeader("Cookie", "_csrfToken=bvqjtrVIgbty9C1J8dnTwsSN5CmQnyzvi5LjRDL0; qdrs=0%7C3%7C0%7C0%7C1; showSectionCommentGuide=1; qdgd=1; e1=%7B%22pid%22%3A%22qd_P_rank_01%22%2C%22eid%22%3A%22qd_C40%22%2C%22l1%22%3A5%7D; e2=%7B%22pid%22%3A%22qd_p_qidian%22%2C%22eid%22%3A%22qd_A53%22%2C%22l1%22%3A40%7D; newstatisticUUID=1602515212_2115648072; lrbc=3144877%7C486663811%7C0%2C1016572786%7C498215647%7C0%2C1023613096%7C571280490%7C0; rcr=3144877%2C1016572786%2C1015792398%2C1017125042%2C1023525533%2C1023303665%2C1023357920%2C1023578176%2C1023613096; bc=1016572786%2C3144877");
-            httpGet.setHeader(":authority", "book.qidian.com");
-            httpGet.setHeader(":method", "GET");
-            httpGet.setHeader(":path", getPath(url));
+
+
+//            httpGet.setHeader(":method", "GET");
+//            httpGet.setHeader(":path", "/ajax/book/category?_csrfToken=bvqjtrVIgbty9C1J8dnTwsSN5CmQnyzvi5LjRDL0&bookId=1016660823");
+            httpGet.setHeader("referer", refer);
         }
+        return httpGet;
+    }
+
+    // 这个url给第二个url使用，获取具体的弹幕
+    private static HttpGet buildGetRequest1(String url) {
+        HttpGet httpGet = new HttpGet(url);
+        httpGet.setHeader("authority", "read.qidian.com");
+        httpGet.setHeader("cache-control", "max-age=0");
+        httpGet.setHeader("upgrade-insecure-requests", "1");
+        httpGet.setHeader("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36");
+        httpGet.setHeader("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
+        httpGet.setHeader("sec-fetch-user", "?1");
+        httpGet.setHeader("sec-fetch-dest", "document");
+        httpGet.setHeader("accept-language", "zh-CN,zh;q=0.9,en;q=0.8");
+        httpGet.setHeader("x-requested-with", "XMLHttpRequest");
+        httpGet.setHeader("sec-fetch-site", "same-origin");
+        httpGet.setHeader("sec-fetch-mode", "cors");
+        httpGet.setHeader("sec-fetch-dest", "empty");
+        httpGet.setHeader("accept-language", "zh-CN,zh;q=0.9,en;q=0.8");
+        httpGet.setHeader("cookie", "_csrfToken=bvqjtrVIgbty9C1J8dnTwsSN5CmQnyzvi5LjRDL0; qdrs=0^%^7C3^%^7C0^%^7C0^%^7C1; showSectionCommentGuide=1; qdgd=1; e1=^%^7B^%^22pid^%^22^%^3A^%^22qd_P_rank_01^%^22^%^2C^%^22eid^%^22^%^3A^%^22qd_C40^%^22^%^2C^%^22l1^%^22^%^3A5^%^7D; e2=^%^7B^%^22pid^%^22^%^3A^%^22qd_p_qidian^%^22^%^2C^%^22eid^%^22^%^3A^%^22qd_A53^%^22^%^2C^%^22l1^%^22^%^3A40^%^7D; lrbc=3144877^%^7C486663811^%^7C0^%^2C1016572786^%^7C498215647^%^7C0^%^2C1023613096^%^7C571280490^%^7C0; rcr=3144877^%^2C1016572786^%^2C1015792398^%^2C1017125042^%^2C1023525533^%^2C1023303665^%^2C1023357920^%^2C1023578176^%^2C1023613096; bc=3144877; newstatisticUUID=1603118008_1059896075; pageOps=1");
+        return httpGet;
+    }
+
+    private static HttpGet buildGetRequest1(String url, String referer) {
+        Random random = new Random();
+        HttpGet httpGet = new HttpGet(url);
+        httpGet.setHeader("authority", "read.qidian.com");
+        httpGet.setHeader("accept", "application/json, text/javascript, */*; q=0.01");
+        httpGet.setHeader("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36");
+        httpGet.setHeader("x-requested-with", "XMLHttpRequest");
+        httpGet.setHeader("sec-fetch-site", "same-origin");
+        httpGet.setHeader("sec-fetch-mode", "cors");
+        httpGet.setHeader("sec-fetch-dest", "empty");
+        httpGet.setHeader("referer", "https://read.qidian.com/chapter/" + referer);
+        httpGet.setHeader("accept-language", "zh-CN,zh;q=0.9,en;q=0.8");
+        httpGet.setHeader("cookie", "_csrfToken=bvqjtrVIgbty9C1J8dnTwsSN5CmQnyzvi5LjRDL0; qdrs=0^%^7C3^%^7C0^%^7C0^%^7C1; showSectionCommentGuide=1; qdgd=1; e1=^%^7B^%^22pid^%^22^%^3A^%^22qd_P_rank_01^%^22^%^2C^%^22eid^%^22^%^3A^%^22qd_C40^%^22^%^2C^%^22l1^%^22^%^3A5^%^7D; e2=^%^7B^%^22pid^%^22^%^3A^%^22qd_p_qidian^%^22^%^2C^%^22eid^%^22^%^3A^%^22qd_A53^%^22^%^2C^%^22l1^%^22^%^3A40^%^7D; lrbc=3144877^%^7C486663811^%^7C0^%^2C1016572786^%^7C498215647^%^7C0^%^2C1023613096^%^7C571280490^%^7C0; rcr=3144877^%^2C1016572786^%^2C1015792398^%^2C1017125042^%^2C1023525533^%^2C1023303665^%^2C1023357920^%^2C1023578176^%^2C1023613096; bc=3144877; newstatisticUUID=1603118008_1059896075; pageOps=1");
         return httpGet;
     }
 
